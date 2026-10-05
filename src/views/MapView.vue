@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import maplibregl, { Map as MapLibreMap } from 'maplibre-gl'
 import { useSchemeStore } from '../store/scheme'
 
@@ -7,6 +7,12 @@ const store = useSchemeStore()
 const mapEl = ref<HTMLDivElement>()
 let map: MapLibreMap | undefined
 const layers = ref({ closure: true, detour: true, ambulance: true, bus: true, adjacent: true })
+const stageChecks = computed(() => store.checksFor(store.selectedStageId))
+const lastInvalidated = computed(() => {
+  const head = store.headVersion
+  if (!head) return []
+  return head.invalidatedChecks.filter((id) => id.includes(store.selectedStageId))
+})
 
 function addGeoSource(id: string, coordinates: [number, number][], color: string, dasharray?: number[]) {
   if (!map?.isStyleLoaded()) return
@@ -51,12 +57,12 @@ watch(layers, () => {
 </script>
 
 <template>
-  <section class="page-head compact"><div><p class="eyebrow">几何与时间联动</p><h1>封路范围与阶段地图</h1><p>选择阶段后在地图上点击绘制路线；每次几何修改都会生成版本，审批意见锚定对应路段。</p></div><a-space><a-button @click="store.startDraw" :status="store.drawing ? 'danger' : undefined">{{ store.drawing ? `绘制中 · 已点 ${store.draftRoute.length} 个` : '绘制封路路线' }}</a-button><a-button :disabled="!store.drawing" type="primary" @click="store.finishDraw">完成绘制</a-button><a-button @click="fit">定位全段</a-button></a-space></section>
+  <section class="page-head compact"><div><p class="eyebrow">几何与时间联动</p><h1>封路范围与阶段地图</h1><p>选择阶段后在地图上点击绘制路线；每次修改生成新版本，受影响的公交覆盖、绕行时延、救护通道与相邻工程检测自动失效重算。</p></div><a-space><a-button @click="store.startDraw" :status="store.drawing ? 'danger' : undefined">{{ store.drawing ? `绘制中 · 已点 ${store.draftRoute.length} 个` : '绘制封路路线' }}</a-button><a-button :disabled="!store.drawing" type="primary" @click="store.finishDraw">完成绘制</a-button><a-button @click="fit">定位全段</a-button></a-space></section>
   <div class="toolbar card"><a-radio-group v-model="store.selectedStageId" type="button"><a-radio v-for="stage in store.scheme.stages" :key="stage.id" :value="stage.id">{{ stage.id }}</a-radio></a-radio-group><span class="spacer"></span><a-checkbox v-model="layers.closure">封路</a-checkbox><a-checkbox v-model="layers.detour">绕行</a-checkbox><a-checkbox v-model="layers.ambulance">救护通道</a-checkbox><a-checkbox v-model="layers.bus">公交</a-checkbox><a-checkbox v-model="layers.adjacent">相邻工程</a-checkbox></div>
   <div class="map-grid">
     <div ref="mapEl" class="map"></div>
     <aside class="card inspector">
-      <div class="panel-head"><div><h2>{{ store.selectedStage?.name }}</h2><p>{{ store.selectedStage?.start }} → {{ store.selectedStage?.end }}</p></div><a-tag :color="store.selectedStage?.status === '退回' ? 'red' : 'orange'">{{ store.selectedStage?.status }}</a-tag></div>
+      <div class="panel-head"><div><h2>{{ store.selectedStage?.name }}</h2><p>{{ store.selectedStage?.start }} → {{ store.selectedStage?.end }} · 锚点 v{{ store.selectedStage?.versionAnchor }}</p></div><a-tag :color="store.selectedStage?.status === '退回' ? 'red' : 'orange'">{{ store.selectedStage?.status }}</a-tag></div>
       <a-form layout="vertical" :model="store.selectedStage || {}">
         <a-form-item label="车道占用"><a-input :model-value="store.selectedStage?.lanes" @change="(value: string) => store.updateStage({ lanes: value })" /></a-form-item>
         <a-form-item label="阶段名称"><a-input :model-value="store.selectedStage?.name" @change="(value: string) => store.updateStage({ name: value })" /></a-form-item>
@@ -65,13 +71,17 @@ watch(layers, () => {
       <h3>绕行比较</h3>
       <div v-for="route in store.scheme.detours" :key="route.id" class="detour"><div><b>{{ route.name }}</b><small>{{ route.distance }} km · 增加 {{ route.extraMinutes }} 分钟</small></div><a-tag :color="route.extraMinutes > 10 ? 'orange' : 'green'">{{ route.extraMinutes > 10 ? '关注' : '可用' }}</a-tag></div>
       <a-divider />
-      <h3>路段冲突</h3>
-      <div v-for="item in store.conflicts.filter((conflict) => conflict.segmentId === store.selectedStageId)" :key="item.id" class="issue" :class="item.level === '高' ? 'red' : 'amber'"><b>{{ item.title }}</b><p>{{ item.detail }}</p></div>
+      <h3>影响检测 <a-tag v-if="lastInvalidated.length" color="orange" style="margin-left:6px">本次调整使 {{ lastInvalidated.length }} 项失效重算</a-tag></h3>
+      <div v-for="item in stageChecks" :key="item.id" class="issue" :class="item.level === '高' ? 'red' : item.level === '中' ? 'amber' : 'ok'">
+        <div class="issue-head"><b>{{ item.kind }} · {{ item.title }}</b><a-tag v-if="item.status === '重算中'" color="orange">重算中</a-tag><a-tag v-else :color="item.level === '高' ? 'red' : item.level === '中' ? 'orange' : 'green'">{{ item.level }}</a-tag></div>
+        <p>{{ item.status === '重算中' ? '路段已调整，正在按当前方案重算…' : item.detail }}</p>
+        <small>基于方案 v{{ item.computedVersion }}</small>
+      </div>
     </aside>
   </div>
 </template>
 
 <style scoped>
-.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;margin-bottom:14px}.spacer{flex:1}.map-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,.65fr);gap:16px}.map{height:min(68vh,680px);min-height:420px;border-radius:8px;overflow:hidden}.inspector{height:fit-content}.panel-head{display:flex;justify-content:space-between}.panel-head h2{font-size:18px;margin:0 0 5px}.panel-head p{color:#7a8798;font-size:12px;margin:0}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.inspector h3{font-size:14px;margin:18px 0 10px}.detour{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #edf0f5}.detour b,.detour small{display:block}.detour small{color:#7a8798;margin-top:4px}.issue{padding:10px;border-radius:6px;margin-bottom:8px}.issue.red{background:#fff1f2}.issue.amber{background:#fff7ed}.issue p{margin:4px 0 0;color:#64748b;font-size:13px}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;margin-bottom:14px}.spacer{flex:1}.map-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,.65fr);gap:16px}.map{height:min(68vh,680px);min-height:420px;border-radius:8px;overflow:hidden}.inspector{height:fit-content}.panel-head{display:flex;justify-content:space-between}.panel-head h2{font-size:18px;margin:0 0 5px}.panel-head p{color:#7a8798;font-size:12px;margin:0}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.inspector h3{font-size:14px;margin:18px 0 10px}.detour{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #edf0f5}.detour b,.detour small{display:block}.detour small{color:#7a8798;margin-top:4px}.issue{padding:10px;border-radius:6px;margin-bottom:8px}.issue.red{background:#fff1f2}.issue.amber{background:#fff7ed}.issue.ok{background:#f0fdf4}.issue p{margin:4px 0 0;color:#64748b;font-size:13px}.issue-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.issue small{display:block;margin-top:5px;color:#94a3b8;font-size:12px}
 @media(max-width:1050px){.map-grid{grid-template-columns:1fr}.map{height:55vh}}
 </style>
