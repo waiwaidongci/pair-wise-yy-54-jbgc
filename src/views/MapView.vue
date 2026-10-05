@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import maplibregl, { Map as MapLibreMap } from 'maplibre-gl'
 import { useSchemeStore } from '../store/scheme'
 
 const store = useSchemeStore()
+const derivedOfStage = computed(() => store.scheme.derived.filter((d) => d.segmentId === store.selectedStageId))
+
 const mapEl = ref<HTMLDivElement>()
 let map: MapLibreMap | undefined
 const layers = ref({ closure: true, detour: true, ambulance: true, bus: true, adjacent: true })
@@ -65,6 +67,14 @@ watch(layers, () => {
       <h3>绕行比较</h3>
       <div v-for="route in store.scheme.detours" :key="route.id" class="detour"><div><b>{{ route.name }}</b><small>{{ route.distance }} km · 增加 {{ route.extraMinutes }} 分钟</small></div><a-tag :color="route.extraMinutes > 10 ? 'orange' : 'green'">{{ route.extraMinutes > 10 ? '关注' : '可用' }}</a-tag></div>
       <a-divider />
+      <h3>衍生分析</h3>
+      <a-alert v-if="store.recalculating" type="info" class="recalc-alert" title="正在重算受影响的公交覆盖、绕行时延、救护通道与相邻工程；其他单位已确认结果保留。" />
+      <div v-for="d in derivedOfStage" :key="d.id" class="derived" :class="d.status">
+        <div><b>{{ d.label }}</b><small>基于 v{{ d.basedOnVersion }}</small></div>
+        <a-tag :color="d.status === 'fresh' ? 'green' : d.status === 'stale' ? 'orange' : 'blue'">{{ d.status === 'fresh' ? '已重算' : d.status === 'stale' ? '已失效' : '重算中' }}</a-tag>
+        <p>{{ d.summary }}</p>
+      </div>
+      <a-divider />
       <h3>路段冲突</h3>
       <div v-for="item in store.conflicts.filter((conflict) => conflict.segmentId === store.selectedStageId)" :key="item.id" class="issue" :class="item.level === '高' ? 'red' : 'amber'"><b>{{ item.title }}</b><p>{{ item.detail }}</p></div>
     </aside>
@@ -72,6 +82,6 @@ watch(layers, () => {
 </template>
 
 <style scoped>
-.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;margin-bottom:14px}.spacer{flex:1}.map-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,.65fr);gap:16px}.map{height:min(68vh,680px);min-height:420px;border-radius:8px;overflow:hidden}.inspector{height:fit-content}.panel-head{display:flex;justify-content:space-between}.panel-head h2{font-size:18px;margin:0 0 5px}.panel-head p{color:#7a8798;font-size:12px;margin:0}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.inspector h3{font-size:14px;margin:18px 0 10px}.detour{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #edf0f5}.detour b,.detour small{display:block}.detour small{color:#7a8798;margin-top:4px}.issue{padding:10px;border-radius:6px;margin-bottom:8px}.issue.red{background:#fff1f2}.issue.amber{background:#fff7ed}.issue p{margin:4px 0 0;color:#64748b;font-size:13px}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px;margin-bottom:14px}.spacer{flex:1}.map-grid{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,.65fr);gap:16px}.map{height:min(68vh,680px);min-height:420px;border-radius:8px;overflow:hidden}.inspector{height:fit-content}.panel-head{display:flex;justify-content:space-between}.panel-head h2{font-size:18px;margin:0 0 5px}.panel-head p{color:#7a8798;font-size:12px;margin:0}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.inspector h3{font-size:14px;margin:18px 0 10px}.detour{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #edf0f5}.detour b,.detour small{display:block}.detour small{color:#7a8798;margin-top:4px}.issue{padding:10px;border-radius:6px;margin-bottom:8px}.issue.red{background:#fff1f2}.issue.amber{background:#fff7ed}.issue p{margin:4px 0 0;color:#64748b;font-size:13px}.recalc-alert{margin-bottom:10px}.derived{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border:1px solid #edf0f5;border-radius:6px;padding:10px;margin-bottom:8px}.derived>div{flex:1;min-width:120px}.derived b,.derived small{display:block}.derived small{color:#7a8798;margin-top:2px}.derived p{width:100%;margin:4px 0 0;color:#475569;font-size:13px}.derived.stale{background:#fffbeb;border-color:#fde68a}.derived.calculating{background:#eff6ff;border-color:#bfdbfe}
 @media(max-width:1050px){.map-grid{grid-template-columns:1fr}.map{height:55vh}}
 </style>

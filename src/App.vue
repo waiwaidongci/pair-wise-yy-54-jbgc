@@ -23,8 +23,8 @@ const nav = [
     </a-layout-sider>
     <a-layout>
       <a-layout-header class="topbar">
-        <div><b>{{ store.scheme.id }}</b><span>{{ store.scheme.area }} · 2026 年第四季度施工计划</span></div>
-        <div class="top-actions"><a-tag color="green">协同在线 11</a-tag><a-button :disabled="!store.dirty" @click="store.undo">撤销修改</a-button><a-button type="primary">发起阶段审批</a-button></div>
+        <div><b>{{ store.scheme.id }}</b><span>{{ store.scheme.area }} · 2026 年第四季度施工计划<template v-if="store.scheme.migrated"> · 旧数据已迁移锚定首版</template></span></div>
+        <div class="top-actions"><a-tag color="green">协同在线 11</a-tag><a-tag :color="store.scheme.reviewStatus === '通过' ? 'green' : store.scheme.reviewStatus === '复核失败' ? 'red' : store.scheme.reviewStatus === '复核中' ? 'blue' : 'default'">{{ store.scheme.reviewStatus }}</a-tag><a-button :disabled="!store.dirty" @click="store.undo">撤销修改</a-button><a-button type="primary" @click="store.submitForReview()">发起阶段审批</a-button></div>
       </a-layout-header>
       <a-layout-content class="main"><router-view /></a-layout-content>
     </a-layout>
